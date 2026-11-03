@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ground Truth</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: mission-control split — locked orbital feed on top, guess map below; side by side on wide screens */
+:root{
+  --bg:#0b0f14; --panel:#121922; --line:#243241; --fg:#e6edf3; --muted:#8a9bad;
+  --accent:#ffb020; --good:#3ddc84; --bad:#ff5a5f;
+  --display:"Chakra Petch",ui-sans-serif,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 var(--mono);overflow:hidden;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#app{height:100%;display:flex;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));
+  border-bottom:1px solid var(--line);background:var(--panel)}
+h1{font:700 18px var(--display);letter-spacing:.08em;text-transform:uppercase;margin:0}
+h1 span{color:var(--accent)}
+.stats{display:flex;gap:16px;font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted)}
+.stats b{color:var(--fg);font-weight:600}
+main{flex:1;display:flex;flex-direction:column;min-height:0}
+.pane{position:relative;min-height:0}
+#feedPane{flex:1.15;border-bottom:1px solid var(--line)}
+#guessPane{flex:1}
+#feed,#guess{position:absolute;inset:0;background:#05080b}
+@media (min-width:820px){main{flex-direction:row}#feedPane{border-bottom:0;border-right:1px solid var(--line)}}
+.hud{position:absolute;z-index:500;pointer-events:none;font-size:11px;letter-spacing:.06em;
+  color:var(--accent);text-shadow:0 1px 3px #000}
+.hud.tl{top:10px;left:max(12px,env(safe-area-inset-left,0px))}
+.hud.tr{top:10px;right:max(12px,env(safe-area-inset-right,0px));text-align:right}
+.reticle{position:absolute;inset:0;z-index:450;pointer-events:none}
+.reticle::before,.reticle::after{content:"";position:absolute;left:50%;top:50%;background:var(--accent);opacity:.55}
+.reticle::before{width:28px;height:1px;transform:translate(-50%,-50%)}
+.reticle::after{width:1px;height:28px;transform:translate(-50%,-50%)}
+.corner{position:absolute;width:18px;height:18px;border-color:var(--accent);opacity:.7}
+.corner.a{top:36px;left:12px;border-top:2px solid;border-left:2px solid}
+.corner.b{top:36px;right:12px;border-top:2px solid;border-right:2px solid}
+.corner.c{bottom:12px;left:12px;border-bottom:2px solid;border-left:2px solid}
+.corner.d{bottom:12px;right:12px;border-bottom:2px solid;border-right:2px solid}
+.tip{position:absolute;z-index:500;left:50%;top:10px;transform:translateX(-50%);
+  background:rgba(11,15,20,.85);border:1px solid var(--line);padding:4px 10px;font-size:11px;color:var(--muted);pointer-events:none;white-space:nowrap}
+.bar{display:flex;gap:10px;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));
+  border-top:1px solid var(--line);background:var(--panel)}
+button{font:600 14px var(--display);letter-spacing:.06em;text-transform:uppercase;border-radius:4px;
+  padding:12px 14px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--fg)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.35;cursor:default}
+.primary{flex:1;background:var(--accent);border-color:var(--accent);color:#1a1200}
+.overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;
+  background:rgba(5,8,11,.88);padding:24px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px))}
+.card{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:22px;display:grid;gap:14px}
+.card h2{font:700 26px var(--display);letter-spacing:.04em;text-transform:uppercase;margin:0;text-wrap:balance}
+.card p{margin:0;color:var(--muted)}
+.diff{display:grid;gap:8px}
+.diff button{display:flex;justify-content:space-between;align-items:baseline;text-align:left}
+.diff button small{font:400 11px var(--mono);color:var(--muted);text-transform:none;letter-spacing:0}
+.diff button:hover{border-color:var(--accent)}
+.result{position:absolute;z-index:600;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:12px;
+  background:rgba(18,25,34,.96);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:4px}
+.result .big{font:700 22px var(--display);color:var(--accent);font-variant-numeric:tabular-nums}
+.result .place{font-size:13px}
+.leaflet-container{background:#05080b;font-family:var(--mono)}
+.leaflet-control-attribution{font-size:9px!important;background:rgba(11,15,20,.7)!important;color:var(--muted)!important}
+.leaflet-control-attribution a{color:var(--muted)!important}
+table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+td{padding:4px 0;border-bottom:1px solid var(--line)}
+td:last-child{text-align:right}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Ground<span>/</span>Truth</h1>
+    <div class="stats">
+      <div>RND <b id="rnd">0/5</b></div>
+      <div>PTS <b id="pts">0</b></div>
+    </div>
+  </header>
+  <main>
+    <section class="pane" id="feedPane">
+      <div id="feed"></div>
+      <div class="reticle"></div>
+      <div class="corner a"></div><div class="corner b"></div><div class="corner c"></div><div class="corner d"></div>
+      <div class="hud tl">FEED LOCKED<br>LAT ??.???? LON ???.????</div>
+      <div class="hud tr" id="alt">ALT —</div>
+    </section>
+    <section class="pane" id="guessPane">
+      <div id="guess"></div>
+      <div class="tip" id="tip">Tap the map to drop your pin</div>
+      <div class="result" id="result" hidden>
+        <div class="big" id="rPts"></div>
+        <div class="place" id="rPlace"></div>
+        <div style="color:var(--muted);font-size:12px" id="rDist"></div>
+      </div>
+    </section>
+  </main>
+  <div class="bar">
+    <button id="hintBtn" type="button">Zoom out <small style="opacity:.7">½ pts</small></button>
+    <button id="mainBtn" class="primary" type="button" disabled>Lock in guess</button>
+  </div>
+</div>
+
+<div class="overlay" id="startOv">
+  <div class="card">
+    <h2>Ground Truth</h2>
+    <p>You get a locked satellite view of somewhere on Earth. Drop a pin where you think it is. Five rounds, up to 5,000 points each.</p>
+    <div class="diff">
+      <button type="button" data-z="5">Easy <small>Continent scale · coastlines</small></button>
+      <button type="button" data-z="10">Medium <small>Region scale · rivers, cities</small></button>
+      <button type="button" data-z="14">Hard <small>Neighborhood scale · streets</small></button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="endOv" hidden>
+  <div class="card">
+    <h2 id="endTitle">Mission complete</h2>
+    <p id="endSub"></p>
+    <table id="endTable"></table>
+    <button class="primary" id="againBtn" type="button">Play again</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const PLACES=[
+["Paris, France",48.8566,2.3522],["Manhattan, New York, USA",40.7831,-73.9712],["Tokyo, Japan",35.6762,139.6503],
+["Sydney, Australia",-33.8568,151.2153],["Giza Pyramids, Egypt",29.9792,31.1342],["Palm Jumeirah, Dubai, UAE",25.1124,55.139],
+["Rio de Janeiro, Brazil",-22.9068,-43.1729],["Cape Town, South Africa",-33.9249,18.4241],["London, UK",51.5074,-0.1278],
+["Venice, Italy",45.4408,12.3155],["Istanbul, Turkey",41.0082,28.9784],["Grand Canyon, USA",36.1069,-112.1129],
+["Uluru, Australia",-25.3444,131.0369],["Mount Fuji, Japan",35.3606,138.7274],["Lake Titicaca, Peru/Bolivia",-15.9254,-69.3354],
+["Mexico City, Mexico",19.4326,-99.1332],["Singapore",1.3521,103.8198],["Hong Kong",22.3193,114.1694],
+["Reykjavík, Iceland",64.1466,-21.9426],["Mount Kilimanjaro, Tanzania",-3.0674,37.3556],["Las Vegas, USA",36.1147,-115.1728],
+["San Francisco, USA",37.7749,-122.4194],["Chicago, USA",41.8781,-87.6298],["Amsterdam, Netherlands",52.3676,4.9041],
+["Rome, Italy",41.9028,12.4964],["Barcelona, Spain",41.3874,2.1686],["Moscow, Russia",55.7558,37.6173],
+["Beijing, China",39.9163,116.3972],["Mumbai, India",19.076,72.8777],["Bangkok, Thailand",13.7563,100.5018],
+["Buenos Aires, Argentina",-34.6037,-58.3816],["Lima, Peru",-12.0464,-77.0428],["Panama Canal, Panama",9.0153,-79.5917],
+["Niagara Falls, USA/Canada",43.0828,-79.0742],["Salar de Uyuni, Bolivia",-20.1338,-67.4891],["Dead Sea, Israel/Jordan",31.559,35.4732],
+["Lagos, Nigeria",6.5244,3.3792],["Nairobi, Kenya",-1.2921,36.8219],["Petra, Jordan",30.3285,35.4444],
+["Taj Mahal, India",27.1751,78.0421],["Seoul, South Korea",37.5665,126.978],["Manila, Philippines",14.5995,120.9842],
+["Auckland, New Zealand",-36.8485,174.7633],["Vancouver, Canada",49.2827,-123.1207],["Toronto, Canada",43.6532,-79.3832],
+["Miami, USA",25.7617,-80.1918],["Havana, Cuba",23.1136,-82.3666],["Santorini, Greece",36.4618,25.3753],
+["Gibraltar",36.1408,-5.3536],["Copenhagen, Denmark",55.6761,12.5683],["Bora Bora, French Polynesia",-16.5004,-151.7415],
+["Malé, Maldives",4.1755,73.5093],["Mount Everest, Nepal/China",27.9881,86.925],["Hoover Dam, USA",36.016,-114.7377],
+["Washington, D.C., USA",38.8899,-77.0091],["Denver, USA",39.7392,-104.9903],["Salt Lake City, USA",40.7608,-111.891],
+["Mont-Saint-Michel, France",48.6361,-1.5115],["Edinburgh, Scotland",55.9533,-3.1883],["Kyoto, Japan",35.0116,135.7681],
+["Jakarta, Indonesia",-6.2088,106.8456],["Lisbon, Portugal",38.7223,-9.1393],["Athens, Greece",37.9715,23.7257]
+];
+const ROUNDS=5, MAX=5000, SCALE_KM=1500;
+const $=id=>document.getElementById(id);
+
+const feed=L.map('feed',{zoomControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,
+  boxZoom:false,keyboard:false,touchZoom:false,tap:false,attributionControl:true});
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {maxZoom:19,attribution:'Imagery © Esri'}).addTo(feed);
+feed.setView([20,0],2);
+
+const guess=L.map('guess',{worldCopyJump:true,zoomControl:false,minZoom:1});
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  {maxZoom:19,attribution:'Map © Esri'}).addTo(guess);
+guess.setView([20,0],1);
+
+let zoom=5, round=0, total=0, deck=[], cur=null, pin=null, layers=[], hintUsed=false, locked=false, log=[];
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function km(a,b){const R=6371,r=x=>x*Math.PI/180,dLa=r(b.lat-a.lat),dLo=r(b.lng-a.lng);
+  const h=Math.sin(dLa/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+function altText(z){const m=40075016*Math.cos(cur?cur[1]*Math.PI/180:0)/2**z*(feed.getSize().x/256);
+  return 'VIEW WIDTH ≈ '+(m>=1000?Math.round(m/1000).toLocaleString()+' km':Math.round(m)+' m')+'<br>ZOOM '+z}
+
+function start(z){zoom=z;round=0;total=0;log=[];deck=shuffle(PLACES.slice());
+  $('startOv').hidden=true;$('endOv').hidden=true;nextRound()}
+
+function nextRound(){
+  round++; locked=false; hintUsed=false;
+  layers.forEach(l=>guess.removeLayer(l)); layers=[];
+  if(pin){guess.removeLayer(pin);pin=null}
+  cur=deck[round-1];
+  feed.setView([cur[1],cur[2]],zoom,{animate:false});
+  $('alt').innerHTML=altText(zoom);
+  guess.setView([20,0],1);
+  $('result').hidden=true; $('tip').hidden=false;
+  $('hintBtn').disabled=zoom<=3; $('mainBtn').disabled=true; $('mainBtn').textContent='Lock in guess';
+  $('rnd').textContent=round+'/'+ROUNDS; $('pts').textContent=total.toLocaleString();
+}
+
+guess.on('click',e=>{
+  if(locked)return;
+  const ll=e.latlng;
+  if(pin)pin.setLatLng(ll);else pin=L.circleMarker(ll,{radius:8,color:'#0b0f14',weight:2,fillColor:'#ffb020',fillOpacity:1}).addTo(guess);
+  $('mainBtn').disabled=false; $('tip').hidden=true;
+});
+
+$('hintBtn').onclick=()=>{
+  if(hintUsed||locked)return; hintUsed=true;
+  const z=Math.max(2,zoom-2); feed.setView([cur[1],cur[2]],z); $('alt').innerHTML=altText(z)+' · HINT';
+  $('hintBtn').disabled=true;
+};
+
+$('mainBtn').onclick=()=>{
+  if(!locked){reveal();return}
+  if(round>=ROUNDS)finish();else nextRound();
+};
+
+function reveal(){
+  locked=true;
+  const g=pin.getLatLng().wrap(), actual=L.latLng(cur[1],cur[2]);
+  const d=km(g,actual);
+  let p=Math.round(MAX*Math.exp(-d/SCALE_KM)); if(d<1)p=MAX; if(hintUsed)p=Math.round(p/2);
+  total+=p; log.push([cur[0],d,p]);
+  const shown=pin.getLatLng(), lng=actual.lng+360*Math.round((shown.lng-actual.lng)/360), a2=L.latLng(actual.lat,lng);
+  layers.push(L.circleMarker(a2,{radius:8,color:'#0b0f14',weight:2,fillColor:'#3ddc84',fillOpacity:1}).addTo(guess));
+  layers.push(L.polyline([shown,a2],{color:'#ffb020',weight:2,dashArray:'6 6'}).addTo(guess));
+  guess.fitBounds(L.latLngBounds([shown,a2]).pad(0.4),{maxZoom:12});
+  feed.flyTo(actual,Math.min(zoom,6),{duration:1.2});
+  $('alt').innerHTML='REVEALED';
+  $('rPts').textContent='+'+p.toLocaleString()+' pts'+(hintUsed?' (hint)':'');
+  $('rPlace').textContent=cur[0];
+  $('rDist').textContent=d<1?'Bullseye':'Off by '+(d<10?d.toFixed(1):Math.round(d).toLocaleString())+' km';
+  $('result').hidden=false; $('hintBtn').disabled=true;
+  $('mainBtn').textContent=round>=ROUNDS?'See results':'Next round';
+  $('pts').textContent=total.toLocaleString();
+}
+
+function finish(){
+  const pct=total/(MAX*ROUNDS);
+  $('endTitle').textContent=pct>.8?'Eagle eye':pct>.5?'Solid navigator':pct>.25?'Somewhat lost':'Lost in orbit';
+  $('endSub').textContent=total.toLocaleString()+' / '+(MAX*ROUNDS).toLocaleString()+' points';
+  $('endTable').innerHTML=log.map(r=>`<tr><td>${r[0]}</td><td>${Math.round(r[1]).toLocaleString()} km · ${r[2].toLocaleString()}</td></tr>`).join('');
+  $('endOv').hidden=false;
+}
+$('againBtn').onclick=()=>{$('endOv').hidden=true;$('startOv').hidden=false};
+document.querySelectorAll('.diff button').forEach(b=>b.onclick=()=>start(+b.dataset.z));
+addEventListener('resize',()=>{feed.invalidateSize();guess.invalidateSize()});
+</script>
+</body>
+</html>
