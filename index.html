@@ -117,9 +117,9 @@ td:last-child{text-align:right}
     <h2>Ground Truth</h2>
     <p>You get a locked satellite view of somewhere on Earth. Drop a pin where you think it is. Five rounds, up to 5,000 points each.</p>
     <div class="diff">
-      <button type="button" data-z="5">Easy <small>Continent scale · coastlines</small></button>
-      <button type="button" data-z="10">Medium <small>Region scale · rivers, cities</small></button>
-      <button type="button" data-z="14">Hard <small>Neighborhood scale · streets</small></button>
+      <button type="button" data-w="1550">Easy <small>Continent scale · coastlines</small></button>
+      <button type="button" data-w="50">Medium <small>Region scale · rivers, cities</small></button>
+      <button type="button" data-w="3">Hard <small>Neighborhood scale · streets</small></button>
     </div>
   </div>
 </div>
@@ -161,7 +161,7 @@ const PLACES=[
 const ROUNDS=5, MAX=5000, SCALE_KM=1500;
 const $=id=>document.getElementById(id);
 
-const feed=L.map('feed',{zoomControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,
+const feed=L.map('feed',{zoomSnap:0,zoomControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,
   boxZoom:false,keyboard:false,touchZoom:false,tap:false,attributionControl:true});
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   {maxZoom:19,attribution:'Imagery © Esri'}).addTo(feed);
@@ -172,15 +172,15 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_M
   {maxZoom:19,attribution:'Map © Esri'}).addTo(guess);
 guess.setView([20,0],1);
 
-let zoom=5, round=0, total=0, deck=[], cur=null, pin=null, layers=[], hintUsed=false, locked=false, log=[];
+let width=1550, zoom=5, round=0, total=0, deck=[], cur=null, pin=null, layers=[], hintUsed=false, locked=false, log=[];
 
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 function km(a,b){const R=6371,r=x=>x*Math.PI/180,dLa=r(b.lat-a.lat),dLo=r(b.lng-a.lng);
   const h=Math.sin(dLa/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
-function altText(z){const m=40075016*Math.cos(cur?cur[1]*Math.PI/180:0)/2**z*(feed.getSize().x/256);
-  return 'VIEW WIDTH ≈ '+(m>=1000?Math.round(m/1000).toLocaleString()+' km':Math.round(m)+' m')+'<br>ZOOM '+z}
+function zFor(km){return Math.log2(40075*Math.cos(cur[1]*Math.PI/180)*(feed.getSize().x/256)/km)}
+function altText(km){return 'VIEW WIDTH ≈ '+(km>=1?Math.round(km).toLocaleString()+' km':Math.round(km*1000)+' m')}
 
-function start(z){zoom=z;round=0;total=0;log=[];deck=shuffle(PLACES.slice());
+function start(w){width=w;round=0;total=0;log=[];deck=shuffle(PLACES.slice());
   $('startOv').hidden=true;$('endOv').hidden=true;nextRound()}
 
 function nextRound(){
@@ -188,11 +188,12 @@ function nextRound(){
   layers.forEach(l=>guess.removeLayer(l)); layers=[];
   if(pin){guess.removeLayer(pin);pin=null}
   cur=deck[round-1];
+  zoom=zFor(width);
   feed.setView([cur[1],cur[2]],zoom,{animate:false});
-  $('alt').innerHTML=altText(zoom);
+  $('alt').innerHTML=altText(width);
   guess.setView([20,0],1);
   $('result').hidden=true; $('tip').hidden=false;
-  $('hintBtn').disabled=zoom<=3; $('mainBtn').disabled=true; $('mainBtn').textContent='Lock in guess';
+  $('hintBtn').disabled=false; $('mainBtn').disabled=true; $('mainBtn').textContent='Lock in guess';
   $('rnd').textContent=round+'/'+ROUNDS; $('pts').textContent=total.toLocaleString();
 }
 
@@ -205,7 +206,7 @@ guess.on('click',e=>{
 
 $('hintBtn').onclick=()=>{
   if(hintUsed||locked)return; hintUsed=true;
-  const z=Math.max(2,zoom-2); feed.setView([cur[1],cur[2]],z); $('alt').innerHTML=altText(z)+' · HINT';
+  feed.setView([cur[1],cur[2]],zFor(width*4)); $('alt').innerHTML=altText(width*4)+' · HINT';
   $('hintBtn').disabled=true;
 };
 
@@ -242,8 +243,9 @@ function finish(){
   $('endOv').hidden=false;
 }
 $('againBtn').onclick=()=>{$('endOv').hidden=true;$('startOv').hidden=false};
-document.querySelectorAll('.diff button').forEach(b=>b.onclick=()=>start(+b.dataset.z));
-addEventListener('resize',()=>{feed.invalidateSize();guess.invalidateSize()});
+document.querySelectorAll('.diff button').forEach(b=>b.onclick=()=>start(+b.dataset.w));
+addEventListener('resize',()=>{feed.invalidateSize();guess.invalidateSize();
+  if(cur&&!locked){const w=hintUsed?width*4:width;feed.setView([cur[1],cur[2]],zFor(w),{animate:false})}});
 </script>
 </body>
 </html>
